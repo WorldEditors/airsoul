@@ -1,7 +1,7 @@
 ---
 run_name: YOUR_NAME_TO_RUN
 master_port: "12402"
-load_model_path: [Path or None]
+load_model_path: null
 reset_metainfo:
   epochs: 0
 monitor_dir: ./runs/monitor/
@@ -161,7 +161,19 @@ train_config:
     batch_size_causal: 1
     epoch_vae_stop: 1
     epoch_causal_start: -1
-    manual_sync: True
+    # DDP already synchronizes gradients during backward. Enabling manual_sync
+    # performs a second all-reduce and invalidates scaling measurements.
+    manual_sync: False
+
+    benchmark:
+        enabled: False
+        phase: MazeEpochCausal
+        label: mazeworld-causal
+        warmup_steps: 5
+        measure_steps: 20
+        output: ./runs/benchmark.json
+        baseline_report: null
+        save_checkpoint: False
 
     seq_len_vae: 300
     seq_len_causal: 1000
@@ -201,15 +213,16 @@ train_config:
         - 1.0e-7
 
 test_config:
-    batch_size_vae: 1
-    batch_size_causal: 1
-    data_path: [PATH]
-    epoch_vae_stop: 1
-    epoch_causal_start: -1
-
-    seq_len_vae: 300
-    seq_len_causal: 1000
-    seg_len_vae: 300
-    seg_len_causal: 1000
-
-    output: ./results
+    datasets:
+      - name: default
+        batch_size_vae: 1
+        batch_size_causal: 1
+        data_path: [PATH]
+        epoch_vae_stop: 1
+        epoch_causal_start: -1
+        seq_len_vae: 300
+        seq_len_causal: 1000
+        seg_len_vae: 300
+        seg_len_causal: 1000
+        log_dir: ./runs/eval_tensorboard
+        output: ./results/eval.log

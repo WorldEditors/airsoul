@@ -1,6 +1,9 @@
 import os
 import sys
 import argparse
+import json
+import socket
+import time
 import torch
 import numpy
 import torch.optim as optim
@@ -53,6 +56,18 @@ def EpochManager(cls):
                 self.computer.dataloader = self.dataloader
 
         def init_logger(self):
+            benchmark = self.get('benchmark', config=self.config)
+            benchmark_phase_matches = (
+                benchmark is not None and (
+                    not benchmark.has_attr("phase") or
+                    str(benchmark.phase) == self.computer.__class__.__name__
+                )
+            )
+            if (self.is_training and benchmark is not None and benchmark.enabled and
+                    benchmark_phase_matches):
+                self.logger = None
+                self.computer.logger = None
+                return
             self.logger = self.get('logger')
             if(self.logger is None):
                 self.logger_keys = self.get('logger_keys')
@@ -164,6 +179,95 @@ def EpochManager(cls):
                 return True
             return False
 
+        def _write_benchmark_report(self, benchmark, elapsed, measured_steps,
+                                    device_type, device):
+            """Aggregate and persist one comparable, cluster-wide training result."""
+            elapsed_tensor = torch.tensor(elapsed, dtype=torch.float64, device=device)
+            dist.all_reduce(elapsed_tensor, op=dist.ReduceOp.MAX)
+            elapsed = float(elapsed_tensor.item())
+
+            if benchmark.has_attr("samples_per_rank_per_step"):
+                local_batch_size = int(benchmark.samples_per_rank_per_step)
+            elif "Causal" in self.computer.__class__.__name__:
+                local_batch_size = int(self.config.batch_size_causal)
+            elif "VAE" in self.computer.__class__.__name__:
+                local_batch_size = int(self.config.batch_size_vae)
+            else:
+                local_batch_size = int(self.config.batch_size)
+
+            if benchmark.has_attr("units_per_sample"):
+                units_per_sample = int(benchmark.units_per_sample)
+            elif "Causal" in self.computer.__class__.__name__:
+                units_per_sample = int(self.config.seq_len_causal)
+            elif "VAE" in self.computer.__class__.__name__:
+                units_per_sample = int(self.config.seq_len_vae)
+            else:
+                units_per_sample = int(self.config.seq_len) if self.config.has_attr("seq_len") else 1
+
+            peak_memory = 0
+            if device_type == 'cuda':
+                peak = torch.tensor(
+                    torch.cuda.max_memory_allocated(device), dtype=torch.float64, device=device
+                )
+                dist.all_reduce(peak, op=dist.ReduceOp.MAX)
+                peak_memory = int(peak.item())
+
+            global_samples = measured_steps * local_batch_size * self.world_size
+            throughput = global_samples / elapsed
+            node_count = int(os.environ.get("NNODES", "1"))
+            report = {
+                "label": benchmark.label if benchmark.has_attr("label") else self.run_name,
+                "epoch_type": self.computer.__class__.__name__,
+                "world_size": self.world_size,
+                "node_count": node_count,
+                "processes_per_node": self.world_size // node_count,
+                "local_batch_size": local_batch_size,
+                "global_batch_size": local_batch_size * self.world_size,
+                "sequence_length": units_per_sample,
+                "warmup_steps": int(benchmark.warmup_steps),
+                "measured_steps": measured_steps,
+                "elapsed_seconds": elapsed,
+                "step_time_ms": elapsed * 1000.0 / measured_steps,
+                "samples_per_second": throughput,
+                "tokens_per_second": throughput * units_per_sample,
+                "peak_memory_bytes_per_gpu": peak_memory,
+                "hostname_rank0": socket.gethostname(),
+                "gpu": torch.cuda.get_device_name(device) if device_type == 'cuda' else "CPU",
+                "torch_version": torch.__version__,
+            }
+
+            baseline_path = benchmark.baseline_report if benchmark.has_attr("baseline_report") else None
+            if self.main and baseline_path and str(baseline_path).lower() != "none":
+                with open(baseline_path, "r", encoding="utf-8") as handle:
+                    baseline = json.load(handle)
+                speedup = throughput / baseline["samples_per_second"]
+                scale = self.world_size / baseline["world_size"]
+                report["baseline_report"] = str(baseline_path)
+                report["speedup"] = speedup
+                report["scaling_efficiency_percent"] = speedup / scale * 100.0
+
+            if self.main:
+                output_path = str(benchmark.output)
+                output_dir = os.path.dirname(output_path)
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
+                with open(output_path, "w", encoding="utf-8") as handle:
+                    json.dump(report, handle, indent=2, ensure_ascii=False)
+                    handle.write("\n")
+                summary = (
+                    f"[BENCHMARK] {report['world_size']} GPU(s), "
+                    f"{report['samples_per_second']:.3f} samples/s, "
+                    f"{report['tokens_per_second']:.3f} tokens/s, "
+                    f"{report['step_time_ms']:.3f} ms/step"
+                )
+                if "speedup" in report:
+                    summary += (
+                        f", speedup={report['speedup']:.3f}x, "
+                        f"scaling_efficiency={report['scaling_efficiency_percent']:.2f}%"
+                    )
+                print(summary, flush=True)
+                print(f"[BENCHMARK] report: {output_path}", flush=True)
+
         def run(self, device, device_type):
             if(not self._valid_epoch()):
                 return
@@ -178,6 +282,32 @@ def EpochManager(cls):
                 manual_sync = False
             data_length = len(self.dataloader)
 
+            benchmark = self.get('benchmark', config=self.config)
+            benchmark_phase_matches = bool(
+                benchmark is not None and (
+                    not benchmark.has_attr("phase") or
+                    str(benchmark.phase) == self.computer.__class__.__name__
+                )
+            )
+            benchmark_enabled = bool(
+                self.is_training and benchmark is not None and benchmark.enabled and
+                benchmark_phase_matches
+            )
+            benchmark_complete = False
+            if benchmark_enabled:
+                warmup_steps = int(benchmark.warmup_steps)
+                measure_steps = int(benchmark.measure_steps)
+                if warmup_steps < 0 or measure_steps < 1:
+                    raise ValueError("benchmark warmup_steps must be >= 0 and measure_steps must be >= 1")
+                required_steps = warmup_steps + measure_steps
+                if data_length < required_steps:
+                    raise ValueError(
+                        f"benchmark needs {required_steps} batches per rank, but the dataloader only has "
+                        f"{data_length}; generate more records or reduce benchmark steps"
+                    )
+                benchmark_step = 0
+                benchmark_start = None
+
             if("training_metainfo" in self.__dict__ and self.is_training):
                 done = self.training_metainfo["epochs"] > self.config.max_epochs
             else:
@@ -185,6 +315,13 @@ def EpochManager(cls):
 
             for batch_id, batch_data in enumerate(self.dataloader):
                 acc_iter_log += 1
+
+                if benchmark_enabled and benchmark_step == warmup_steps:
+                    if device_type == 'cuda':
+                        torch.cuda.synchronize(device)
+                        torch.cuda.reset_peak_memory_stats(device)
+                    dist.barrier()
+                    benchmark_start = time.perf_counter()
 
                 # Important: Must reset the model before segment iteration
                 self.model.module.reset()
@@ -215,6 +352,19 @@ def EpochManager(cls):
                                   local_batch_id=batch_id,
                                   global_batch_id=self.get_global_batch_id,
                                   global_epoch_id=self.get_global_epoch_id)
+
+                if benchmark_enabled:
+                    benchmark_step += 1
+                    if benchmark_step == required_steps:
+                        if device_type == 'cuda':
+                            torch.cuda.synchronize(device)
+                        dist.barrier()
+                        elapsed = time.perf_counter() - benchmark_start
+                        self._write_benchmark_report(
+                            benchmark, elapsed, measure_steps, device_type, device
+                        )
+                        benchmark_complete = True
+                        break
 
                 # Emergency Save
                 if(self.emergency_save_check()):
@@ -248,16 +398,22 @@ def EpochManager(cls):
                 self.training_metainfo["epochs"] += 1
             
             # Save At Training Epoch End
-            if(self.main and self.is_training):
+            save_benchmark_checkpoint = (
+                not benchmark_enabled or
+                (benchmark.has_attr("save_checkpoint") and benchmark.save_checkpoint)
+            )
+            if(self.main and self.is_training and save_benchmark_checkpoint):
                 custom_save_model(self.model, self.config.save_model_path,
                                 self.__class__.__name__, self.training_metainfo)
 
-            if("training_metainfo" in self.__dict__ and self.is_training):
+            if benchmark_complete:
+                done = True
+            elif("training_metainfo" in self.__dict__ and self.is_training):
                 done = self.training_metainfo["epochs"] > self.config.max_epochs
             else:
                 done = False
 
-            yield True, done
+            yield not benchmark_complete, done
 
     return WrapperEpochManager
 
@@ -348,8 +504,15 @@ def dist_process(rank, use_gpu, world_size, config, main_rank,
                                         extra_info=extra_info))
 
     evaluate_list = []
+    benchmark_run = (
+        config.train_config.has_attr("benchmark") and
+        config.train_config.benchmark.enabled
+    )
+    # Performance runs intentionally skip validation setup so that only the
+    # measured training path allocates GPU memory and reads data.
+    datasets = [] if benchmark_run else config.test_config.datasets
     # Build log_config.
-    for dataset in config.test_config.datasets:
+    for dataset in datasets:
         # Create test_config，load dataset dict.
         test_config = Configure()
         test_config.from_dict(dataset)
