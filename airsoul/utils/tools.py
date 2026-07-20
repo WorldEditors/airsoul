@@ -173,6 +173,9 @@ def print_memory(info="Default"):
 def custom_save_model(model, save_model_path, 
                       object_name, meta_info,
                       name_key="epochs", appendix=""):
+    if not save_model_path:
+        raise ValueError("save_model_path must be a non-empty path")
+    create_folder(save_model_path)
     check_model_validity(model.module)
     data = {"metadict_models":model.state_dict()}
     for key in meta_info:
@@ -182,7 +185,8 @@ def custom_save_model(model, save_model_path,
         name = 'default'
     else:
         name = meta_info[name_key]
-    torch.save(data, save_model_path + f"/ckpt_{name}{appendix}.pth")
+    checkpoint_path = os.path.join(save_model_path, f"ckpt_{name}{appendix}.pth")
+    torch.save(data, checkpoint_path)
 
 def custom_load_model(model,
                       state_dict_path,
