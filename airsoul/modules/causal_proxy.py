@@ -6,11 +6,6 @@ from .recursion import PRNN, SimpleLSTM
 from .block_wrapper import MultiBlocks
 from .transformers import ARTransformerEncoder
 from .blockrec_wrapper import BlockRecurrentWrapper
-from .gsa import GLABlock, GSABlock
-from .rwkv6 import RWKV6Layer
-from .rwkv7 import RWKV7Layer
-from .deltanet import GatedDeltaNet
-from .sparse_attention import NSATransformerEncoder
 
 class CausalBlock(nn.Module):
     """
@@ -36,6 +31,8 @@ class CausalBlock(nn.Module):
                 context_window=config.context_window
             )
         elif(self.model_type == "nsa"):
+            from .sparse_attention import NSATransformerEncoder
+
             main_encoder = NSATransformerEncoder(
                 config.num_layers, 
                 config.hidden_size, 
@@ -44,6 +41,8 @@ class CausalBlock(nn.Module):
                 dropout=config.dropout, 
             )
         elif(self.model_type == "gsa"):
+            from .gsa import GSABlock
+
             main_encoder = MultiBlocks(
                 GSABlock,
                 config.num_layers,
@@ -56,6 +55,8 @@ class CausalBlock(nn.Module):
                 is_generate=is_generate
             )
         elif(self.model_type == "gla"):
+            from .gsa import GLABlock
+
             main_encoder = MultiBlocks(
                 GLABlock,
                 config.num_layers,
@@ -67,6 +68,8 @@ class CausalBlock(nn.Module):
                 is_generate=is_generate
             )
         elif(self.model_type == "rwkv6"):
+            from .rwkv6 import RWKV6Layer
+
             main_encoder = MultiBlocks(
                 RWKV6Layer,
                 config.num_layers,
@@ -80,6 +83,8 @@ class CausalBlock(nn.Module):
                 num_heads=config.nhead,
             )
         elif(self.model_type == "rwkv7"):
+            from .rwkv7 import RWKV7Layer
+
             main_encoder = MultiBlocks(
                 RWKV7Layer,
                 config.num_layers,
@@ -89,6 +94,8 @@ class CausalBlock(nn.Module):
                 num_heads=config.nhead
             )
         elif(self.model_type == "deltanet"):
+            from .deltanet import GatedDeltaNet
+
             main_encoder = MultiBlocks(
                 GatedDeltaNet,
                 config.num_layers,
