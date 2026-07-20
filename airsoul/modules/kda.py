@@ -5,6 +5,22 @@ and to accept the legacy per-layer cache format.  FLA's KDA layer uses its
 ``Cache`` object internally, so this adapter converts at the boundary.
 """
 
+import importlib.machinery
+import os
+import sys
+import types
+
+# FLA versions that eagerly register optional backends import ``tilelang``
+# before checking FLA_TILELANG.  A broken TileLang/TVM installation therefore
+# prevents even Triton-only layers from importing.  AirSoul's KDA backend uses
+# Triton, so hide TileLang from FLA before importing it.  Supplying a module
+# spec also keeps newer FLA versions' find_spec-based detection happy.
+os.environ["FLA_TILELANG"] = "0"
+if "tilelang" not in sys.modules:
+    _tilelang_stub = types.ModuleType("tilelang")
+    _tilelang_stub.__spec__ = importlib.machinery.ModuleSpec("tilelang", loader=None)
+    sys.modules["tilelang"] = _tilelang_stub
+
 import torch.nn as nn
 from fla.layers.kda import KimiDeltaAttention
 from fla.models.utils import Cache
