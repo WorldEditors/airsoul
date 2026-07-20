@@ -11,8 +11,7 @@ from airsoul.utils import EpochManager, GeneratorBase, Logger
 from airsoul.utils import tag_vocabulary, tag_mapping_id, tag_mapping_gamma
 from airsoul.dataloader import AnyMDPDataSet, AnyMDPv2DataSet, AnyMDPDataSetContinuousState, AnyMDPDataSetContinuousStateAction
 
-import gymnasium 
-import gym
+import gymnasium as gym
 import imageio
 import numpy
 import pickle
@@ -1108,7 +1107,7 @@ class MultiAgentGenerator(OmniRLGenerator):
                 'trail_reward_arr': []
             } for i in range(self.agent_num)}
 
-            previous_state = self.env.reset()
+            previous_state, _ = self.env.reset()
 
             for agent_index in range(self.agent_num):
                 agents_info[agent_index]['trail_state_arr'].append(previous_state[agent_index])
@@ -1136,7 +1135,8 @@ class MultiAgentGenerator(OmniRLGenerator):
                         env_action.append(4) #ToDo, Not for every multi-agent env
                         agent_action.append(4)
                 # Interact with environment         
-                new_state, new_reward, done, *_ = self.env.step(env_action)
+                new_state, new_reward, terminated, truncated, *_ = self.env.step(env_action)
+                done = [t or u for t, u in zip(terminated, truncated)]
                 # Reward shaping
                 shaped_reward = self.reward_shaping(done, new_reward, previous_state, new_state)
                 if not agents_info[0]['stop_learning'] and not agents_info[1]['stop_learning']:

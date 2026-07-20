@@ -354,7 +354,7 @@ class BaseEnv(gymnasium.Env):
         return self.deploy(ctrl)
 
     def deploy(self, ctrl):
-        ob = self.reset()
+        ob, _ = self.reset()
         obs = []
         acts = []
         next_obs = []
@@ -367,7 +367,8 @@ class BaseEnv(gymnasium.Env):
             obs.append(ob)
             acts.append(act)
 
-            ob, rew, done, _ = self.step(act)
+            ob, rew, terminated, truncated, _ = self.step(act)
+            done = terminated or truncated
 
             rews.append(rew)
             next_obs.append(ob)
@@ -473,4 +474,3 @@ class DarkroomEnv(BaseEnv):
         zeros = numpy.zeros(self.action_space.n)
         zeros[action] = 1
         return zeros
-    

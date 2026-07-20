@@ -5,7 +5,7 @@ import numpy as np
 import re
 
 import gymnasium as gym
-from gym.envs.toy_text.frozen_lake import generate_random_map
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
 from stable_baselines3 import DQN, A2C, TD3, PPO
 from stable_baselines3.common.vec_env import DummyVecEnv

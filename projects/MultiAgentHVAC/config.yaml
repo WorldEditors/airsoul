@@ -118,7 +118,8 @@ model_config:
       is_generate: False
 
   causal_block_bak_6:
-      model_type: Mamba
+      model_type: GSA
+      nhead: 8
       num_layers: 12
       hidden_size: 1024
       inner_hidden_size: 2048
@@ -135,7 +136,7 @@ model_config:
       is_frozen: False
 
   causal_block_bak_7:
-      model_type: Mamba2
+      model_type: GSA
       num_layers: 12
       hidden_size: 1024
       inner_hidden_size: 2048

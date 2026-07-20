@@ -166,7 +166,8 @@ model_config:
       is_generate: False
 
   causal_block_bak_6:
-      model_type: Mamba
+      model_type: GSA
+      nhead: 8
       num_layers: 12
       hidden_size: 512
       inner_hidden_size: 1024

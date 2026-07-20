@@ -4,7 +4,7 @@ import sys
 import os
 import torch
 import numpy
-import gym
+import gymnasium as gym
 import l3c.mazeworld
 import cv2
 import pickle
@@ -70,7 +70,7 @@ def model_epoch(maze_env, task, model, policy_config, device, max_step,
         video_writer=None, video_text=True):
     # Example training loop
     maze_env.set_task(task)
-    obs = maze_env.reset()
+    obs, _ = maze_env.reset()
     obs_arr = [obs]
     pred_obs_arr = []
     act_arr = []
@@ -105,7 +105,8 @@ def model_epoch(maze_env, task, model, policy_config, device, max_step,
         # The next step (t+1) has already been cached, thus we only need the decisions from t+2
         act_arr = pred_acts[1:]
         for act in pred_acts:
-            next_obs_gt, next_rew_gt, done, _ = maze_env.step(act)
+            next_obs_gt, next_rew_gt, terminated, truncated, _ = maze_env.step(act)
+            done = terminated or truncated
             obs_arr.append(next_obs_gt)
             rew_arr.append(next_rew_gt)
             if(len(acc_rew_arr) < 1):
@@ -137,7 +138,7 @@ def model_epoch(maze_env, task, model, policy_config, device, max_step,
 def random_epoch(maze_env, task):
     # Example training loop
     maze_env.set_task(task)
-    observation = maze_env.reset()
+    observation, _ = maze_env.reset()
 
     done = False
     step = 0
@@ -147,7 +148,8 @@ def random_epoch(maze_env, task):
     while not done:
         step += 1
         action = random.randint(0, 4)
-        observation, reward, done, _ = maze_env.step(action)
+        observation, reward, terminated, truncated, _ = maze_env.step(action)
+        done = terminated or truncated
         rew_arr.append(reward)
         if(len(acc_rew_arr) < 1):
             acc_rew_arr.append(max(0.0, reward + 0.01))
@@ -158,7 +160,7 @@ def random_epoch(maze_env, task):
 def agent_epoch(maze_env, task, mem_kr):
     # Example training loop
     maze_env.set_task(task)
-    observation = maze_env.reset()
+    observation, _ = maze_env.reset()
     agent = SmartSLAMAgent(maze_env=maze_env, render=False, memory_keep_ratio=mem_kr)
 
     done = False
@@ -169,7 +171,8 @@ def agent_epoch(maze_env, task, mem_kr):
     while not done:
         step += 1
         action = agent.step(observation, reward)
-        observation, reward, done, _ = maze_env.step(action)
+        observation, reward, terminated, truncated, _ = maze_env.step(action)
+        done = terminated or truncated
         rew_arr.append(reward)
         if(len(acc_rew_arr) < 1):
             acc_rew_arr.append(max(0.0, reward + 0.01))

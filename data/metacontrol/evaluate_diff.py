@@ -1,4 +1,4 @@
-# pip install gym[classic_control] stable-baselines3[extra]
+# pip install gymnasium[classic-control] stable-baselines3[extra]
 import sys
 import os
 import random

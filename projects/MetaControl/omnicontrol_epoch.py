@@ -11,8 +11,7 @@ from airsoul.utils import EpochManager, GeneratorBase, Logger
 from airsoul.utils import tag_vocabulary, tag_mapping_id, tag_mapping_gamma
 from airsoul.dataloader import SmallBatchDataSetBase
 
-import gymnasium 
-import gym
+import gymnasium as gym
 import imageio
 import numpy
 import pickle

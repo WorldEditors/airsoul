@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding=utf8
 # File: dump_maze.py
-import gym
+import gymnasium as gym
 import sys
 import os
 import random
@@ -55,7 +55,8 @@ def run_maze_epoch(
         lact_val_list.append(maze_env.list_actions[lact_id])
         bact_type_list.append(bact_type)
 
-        obs, reward, done, info = maze_env.step(bact_id)
+        obs, reward, terminated, truncated, info = maze_env.step(bact_id)
+        done = terminated or truncated
         observation_list.append(obs)
         observation = obs
         reward_list.append(reward)
