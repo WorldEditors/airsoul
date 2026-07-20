@@ -32,6 +32,9 @@ export BENCH_DIR=/shared/results/mazeworld
 cd "$REPO"
 python -m pip install -e .
 python -m pip install pyyaml opencv-python-headless matplotlib gymnasium
+# KDA uses FLA's Triton kernels. Python 3.14 is not compatible with the
+# TileLang/TVM wheels currently found in some prebuilt images.
+python -m pip uninstall -y tilelang tvm-ffi
 # 数据生成依赖 Xenoverse；按云环境的源码/镜像安装方式安装后检查：
 python -c "import torch, xenoverse.mazeworld; print(torch.__version__, torch.cuda.device_count())"
 mkdir -p "$TRAIN_DATA" "$TEST_DATA" "$BENCH_DIR"

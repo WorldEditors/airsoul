@@ -40,6 +40,21 @@ class CausalBlock(nn.Module):
                 dim_feedforward=config.inner_hidden_size, 
                 dropout=config.dropout, 
             )
+        elif(self.model_type == "kda"):
+            from .kda import KDABlock
+
+            main_encoder = MultiBlocks(
+                KDABlock,
+                config.num_layers,
+                hidden=config.hidden_size,
+                fc_hidden=config.inner_hidden_size,
+                fc_dropout=config.dropout,
+                io_size=config.hidden_size,
+                num_heads=config.nhead,
+                expand_v=config.expand_v,
+                d_conv=config.d_conv,
+                is_generate=is_generate,
+            )
         elif(self.model_type == "gsa"):
             from .gsa import GSABlock
 

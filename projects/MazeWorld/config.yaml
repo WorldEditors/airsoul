@@ -141,12 +141,14 @@ model_config:
           memory_type: KV
 
       causal_block:
-          model_type: TRANSFORMER
+          model_type: KDA
           num_layers: 18
           hidden_size: 1024
           inner_hidden_size: 1024
           dropout: 0.10
           nhead: 32
+          expand_v: 1.0
+          d_conv: 4
           memory_length: 64
           context_window: -1
           position_encoding_size: 2048
@@ -154,7 +156,7 @@ model_config:
           gate_bound: 22
           use_blockrecurrence: True
           checkpoints_density: -1
-          memory_type: KV
+          memory_type: MEM
               
 train_config:
     max_epochs: 20
