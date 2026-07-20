@@ -191,6 +191,15 @@ def sum_data(split_id):
         _sum += n_e - n_b+1
     return _sum
 
+
+def _is_mazeworld_record(path):
+    """Identify records by schema, with a path-name fallback for legacy data."""
+    # MazeWorld records always contain the bird's-eye-view map.  This avoids
+    # relying on case-sensitive mount-point names such as ``/Maze``.
+    if os.path.exists(os.path.join(path, "BEVs.npy")):
+        return True
+    return any("maze" in part.lower() for part in os.path.normpath(path).split(os.sep))
+
 def cut_data_(split_id,aim_len=2_000):
     while(sum_data(split_id) != aim_len):
         for split in split_id:
@@ -259,7 +268,7 @@ class MazeDataSet(Dataset):
             # print(folder_name)
         else:
             folder_name = path.split("/")[-1]
-        if "maze" in path:
+        if _is_mazeworld_record(path):
             if self.folder_verbose:
                 return self.__get_maze__(index), folder_name
             return self.__get_maze__(index)
@@ -333,8 +342,14 @@ class MazeDataSet(Dataset):
             actions_behavior_val = np.load(path + "/actions_behavior_val.npy").astype(np.float32)
             actions_label_id = np.load(path + "/actions_label_id.npy").astype(np.int32)
             actions_label_val = np.load(path + "/actions_label_val.npy").astype(np.float32)
-            if os.path.exists(path + "/actions_behavior_prior.npy"):
-                actions_behavior_prior = np.load(path + "/actions_behavior_prior.npy").astype(np.int32)
+            # This field is optional metadata.  MazeWorld stores strings such
+            # as ``rnd`` and ``exp_0.7``; only numeric priors are valid here.
+            actions_behavior_prior = None
+            prior_path = path + "/actions_behavior_prior.npy"
+            if os.path.exists(prior_path):
+                raw_prior = np.load(prior_path)
+                if np.issubdtype(raw_prior.dtype, np.number):
+                    actions_behavior_prior = raw_prior.astype(np.float32)
 
             rewards = np.load(path + "/rewards.npy").astype(np.float32)
             if os.path.exists(path + "/commands.npy"):
