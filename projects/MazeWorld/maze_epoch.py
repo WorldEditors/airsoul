@@ -74,11 +74,11 @@ class MazeEpochVAE:
                 return False
         return True
 
-    def compute(self, obs_arr, behavior_actid_arr, label_actid_arr, 
+    def compute(self, cmd_arr, obs_arr, behavior_actid_arr, label_actid_arr,
                 behavior_act_arr, label_act_arr, rew_arr, 
                 local_batch_id=-1,
                 global_batch_id=-1,
-                gloabl_epoch_id=-1):
+                global_epoch_id=-1):
         """
         Defining the computation function for each batch
         """
