@@ -23,8 +23,45 @@ if "tilelang" not in sys.modules:
 
 import torch.nn as nn
 from fla.layers.kda import KimiDeltaAttention
-from fla.models.utils import Cache
 from airsoul.utils import memory_cpy
+
+
+class _KDACache:
+    """Minimal cache protocol consumed by FLA attention layers."""
+
+    def __init__(self, state=None):
+        self.states = [] if state is None else [memory_cpy(state)]
+        self.seen_tokens = 0
+
+    def __len__(self):
+        return len(self.states)
+
+    def __getitem__(self, layer_idx):
+        return self.states[layer_idx]
+
+    def update(self, recurrent_state=None, attn_state=None, conv_state=None,
+               ffn_state=None, layer_idx=0, offset=1, **kwargs):
+        while len(self.states) <= layer_idx:
+            self.states.append({
+                "recurrent_state": None,
+                "attn_state": None,
+                "conv_state": None,
+                "ffn_state": None,
+            })
+        state = self.states[layer_idx]
+        for key, value in (
+            ("recurrent_state", recurrent_state),
+            ("attn_state", attn_state),
+            ("conv_state", conv_state),
+            ("ffn_state", ffn_state),
+        ):
+            if value is not None:
+                state[key] = value
+        self.seen_tokens += offset or 0
+        return state
+
+    def get_seq_length(self, layer_idx=0, **kwargs):
+        return self.seen_tokens if layer_idx < len(self.states) else 0
 
 
 class KDABlock(nn.Module):
@@ -46,12 +83,7 @@ class KDABlock(nn.Module):
         )
 
     def forward(self, x, cache=None, need_cache=False):
-        if need_cache:
-            past_key_values = Cache.from_legacy_cache(
-                [memory_cpy(cache)] if cache is not None else None
-            )
-        else:
-            past_key_values = None
+        past_key_values = _KDACache(cache) if need_cache else None
 
         out, _, new_cache = self.encoder(
             hidden_states=x,
