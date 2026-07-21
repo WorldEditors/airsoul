@@ -28,8 +28,11 @@ setup(
     install_requires=[
         'numpy>=1.18.0',
         'gymnasium>=1.0.0',
-        'flash-linear-attention>=0.1.0',
-        'torch>=1.13.0', 
+        'torch>=2.4.0',
         'restools>=0.0.1.1',
     ],
+    extras_require={
+        'fla': ['flash-linear-attention>=0.1.0'],
+        'logging': ['tensorboard>=2.14.0'],
+    },
 )
