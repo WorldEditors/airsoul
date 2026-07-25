@@ -15,6 +15,7 @@ from policy_trainer.sac_trainer import SACTrainer
 from policy_trainer.ppo_mlp_trainer import PPO_MLP_Trainer
 from policy_trainer.ppo_lstm_trainer import PPO_LSTM_Trainer
 import gc
+from robofm.dataio import write_unified_record
 
 def create_directory(path):
     os.makedirs(path, exist_ok=True)
@@ -576,15 +577,19 @@ def dump_anymdp(path_name, coach_path, max_steps, epoch_range, mode, ndim, state
             
         file_path = f'{path_name}/record-{epoch_id:06d}'
         try:
-            create_directory(file_path)
             print(f"Saving data for epoch {epoch_id} to {file_path}")
-
-            np.save(f"{file_path}/observations.npy", results["states"])
-            np.save(f"{file_path}/actions_behavior.npy", results["actions_behavior"])
-            np.save(f"{file_path}/actions_label.npy", results["actions_label"])
-            np.save(f"{file_path}/rewards.npy", results["rewards"])
-            np.save(f"{file_path}/prompts.npy", results["prompts"])
-            np.save(f"{file_path}/tags.npy", results["tags"])
+            write_unified_record(
+                file_path,
+                {
+                    "observations": results["states"],
+                    "actions_behavior": results["actions_behavior"],
+                    "actions_label": results["actions_label"],
+                    "rewards": results["rewards"],
+                    "prompts": results["prompts"],
+                    "tags": results["tags"],
+                },
+                producer={"name": "anymdpv2", "version": "v1"},
+            )
             
             print(f"Successfully saved all data for epoch {epoch_id}")
             
@@ -618,42 +623,39 @@ if __name__ == "__main__":
     
     print(f"Using {recommended_workers} workers (requested: {args.workers})")
 
-    epochs_per_worker = []
-    remaining_epochs = args.epochs
-    current_index = args.start_index
-    
-    while remaining_epochs > 0:
-        batch = min(args.batch_size, remaining_epochs)
-        epochs_per_worker.append((current_index, current_index + batch))
-        current_index += batch
-        remaining_epochs -= batch
+    processes = []
+    final_index = args.start_index + args.epochs
+    group_size = args.batch_size * recommended_workers
 
-    processes = []
-for batch_start in range(0, args.epochs, args.batch_size * recommended_workers):
-    for worker_id in range(recommended_workers):
-        start_idx = batch_start + worker_id * args.batch_size
-        end_idx = min(start_idx + args.batch_size, args.epochs)
-        if start_idx >= args.epochs:
-            break
-            
-        process = multiprocessing.Process(
-            target=dump_anymdp,
-            args=(
-                args.output_path,
-                args.coach_path,
-                args.max_steps,
-                range(start_idx, end_idx),
-                args.mode,
-                args.ndim,
-                args.state_dim,
-                args.action_dim,
-                args.seed
+    for batch_start in range(args.start_index, final_index, group_size):
+        for worker_id in range(recommended_workers):
+            start_idx = batch_start + worker_id * args.batch_size
+            end_idx = min(start_idx + args.batch_size, final_index)
+            if start_idx >= final_index:
+                break
+
+            process = multiprocessing.Process(
+                target=dump_anymdp,
+                args=(
+                    args.output_path,
+                    args.coach_path,
+                    args.max_steps,
+                    range(start_idx, end_idx),
+                    args.mode,
+                    args.ndim,
+                    args.state_dim,
+                    args.action_dim,
+                    args.seed,
+                )
             )
-        )
-        processes.append(process)
-        process.start()
-        
-    # 等待当前批次的进程完成
-    for process in processes:
-        process.join()
-    processes = []
+            processes.append(process)
+            process.start()
+
+        # 等待当前批次的进程完成
+        for process in processes:
+            process.join()
+            if process.exitcode:
+                raise RuntimeError(
+                    f"worker {process.pid} failed with exit code {process.exitcode}"
+                )
+        processes = []

@@ -1,4 +1,4 @@
-"""torchrun entry point for AIRSoul unified language/image sequence training."""
+"""torchrun entry point for RoboFM unified language/image sequence training."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ import random
 import numpy as np
 import torch
 
-from airsoul.dataio import LaneScheduler, UnifiedMMapDataset
-from airsoul.models.unified_sequence import UnifiedSequenceModel
-from airsoul.runtime import UnifiedTrainer, apply_fsdp2, init_distributed
-from airsoul.runtime.experiment import ExperimentConfig
+from robofm.dataio import LaneScheduler, open_unified_dataset
+from robofm.models.unified_sequence import UnifiedSequenceModel
+from robofm.runtime import UnifiedTrainer, apply_fsdp2, init_distributed
+from robofm.runtime.experiment import ExperimentConfig
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
-        dataset = UnifiedMMapDataset(config.data.dataset_root)
+        dataset = open_unified_dataset(config.data.dataset_root)
         lanes = LaneScheduler(
             dataset,
             lane_count=config.tbptt.lane_count,

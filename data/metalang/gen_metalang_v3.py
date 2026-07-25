@@ -19,15 +19,32 @@ import argparse
 import multiprocessing
 import numpy
 import random
+import os
 from xenoverse.metalang import metalang_generator_v3
+from robofm.dataio import write_unified_record
 
 def dump_data(path, idxes, configs):
     for idx in idxes:
         if(configs["sample_type"]=='tasks'):
             configs["output"] = path
         else:
-            configs["output"] = "%s/lm_%05d.npy"%(path, idx)
-        metalang_generator_v3(**configs)
+            os.makedirs(path, exist_ok=True)
+            temporary = os.path.join(path, ".robofm_tmp_%05d.npy" % idx)
+            configs["output"] = temporary
+        if configs["sample_type"] == "tasks":
+            metalang_generator_v3(**configs)
+            continue
+        try:
+            metalang_generator_v3(**configs)
+            sequence = numpy.load(temporary, allow_pickle=False)
+            write_unified_record(
+                os.path.join(path, "record-%06d" % idx),
+                {"tokens": sequence},
+                producer={"name": "metalang", "version": "v3"},
+            )
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
     
 
 if __name__=='__main__':
@@ -50,10 +67,9 @@ if __name__=='__main__':
     configs["output_type"] = 'npy'
 
     processes = []
-    n_b_t = 0
-    worker_splits = args.file_number // args.workers
     output_path = args.output_path
     n_workers = args.workers
+    file_number = args.file_number
 
     del configs["workers"]
     del configs["file_number"]
@@ -61,9 +77,10 @@ if __name__=='__main__':
     print("output to", output_path)
 
     for worker_id in range(n_workers):
-        n_e_t = n_b_t + worker_splits
-        n_b = int(n_b_t)
-        n_e = int(n_e_t)
+        n_b = (file_number * worker_id) // n_workers
+        n_e = (file_number * (worker_id + 1)) // n_workers
+        if n_b >= n_e:
+            continue
 
         print("start processes generating %05d to %05d" % (n_b, n_e))
         process = multiprocessing.Process(target=dump_data, 
@@ -71,7 +88,7 @@ if __name__=='__main__':
         processes.append(process)
         process.start()
 
-        n_b_t = n_e_t
-
     for process in processes:
-        process.join() 
+        process.join()
+        if process.exitcode:
+            raise RuntimeError(f"worker {process.pid} failed with exit code {process.exitcode}")

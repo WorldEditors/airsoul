@@ -10,7 +10,7 @@ except ImportError:  # Local Data I/O development can be NumPy-only.
 @unittest.skipIf(torch is None, "PyTorch is not installed")
 class TransformerSWAStateTest(unittest.TestCase):
     def _model(self):
-        from airsoul.backbones.transformer_swa import TransformerSWABackbone
+        from robofm.backbones.transformer_swa import TransformerSWABackbone
 
         torch.manual_seed(7)
         return TransformerSWABackbone(
@@ -68,7 +68,7 @@ class TransformerSWAStateTest(unittest.TestCase):
         self.assertEqual(tuple(empty.hidden_states.shape), (1, 0, 16))
 
     def test_state_lane_select_scatter_and_detach(self):
-        from airsoul.backbones import (
+        from robofm.backbones import (
             detach_state, scatter_state_lanes, select_state_lanes, state_nbytes
         )
 
@@ -90,14 +90,14 @@ class UnifiedRuntimeTest(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from airsoul.backbones import BackboneConfig
-        from airsoul.dataio import AtomType, LaneScheduler, UnifiedDatasetWriter, UnifiedMMapDataset
-        from airsoul.models.unified_sequence import UnifiedModelConfig, UnifiedSequenceModel
-        from airsoul.runtime.config import (
+        from robofm.backbones import BackboneConfig
+        from robofm.dataio import AtomType, LaneScheduler, UnifiedDatasetWriter, UnifiedMMapDataset
+        from robofm.models.unified_sequence import UnifiedModelConfig, UnifiedSequenceModel
+        from robofm.runtime.config import (
             CheckpointConfig, LoggingConfig, RuntimeConfig, TBPTTConfig
         )
-        from airsoul.runtime.distributed import DistributedContext
-        from airsoul.runtime.trainer import UnifiedTrainer
+        from robofm.runtime.distributed import DistributedContext
+        from robofm.runtime.trainer import UnifiedTrainer
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

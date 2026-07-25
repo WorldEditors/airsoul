@@ -7,7 +7,7 @@ import sys
 
 import torch
 
-from airsoul.backbones import BackboneConfig, build_backbone, detach_state
+from robofm.backbones import BackboneConfig, build_backbone, detach_state
 
 
 def run_backbone(name: str, hidden_size: int, num_heads: int,

@@ -15,6 +15,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 import xenoverse.metacontrol
 from xenoverse.metacontrol import sample_cartpole
+from robofm.dataio import write_unified_record
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
@@ -136,17 +137,17 @@ def dump_cartpole_record(
     arr_rewards = np.array(arr_rewards, dtype=np.float32)
 
     env.close()
-    if not os.path.exists(file_path):
-        os.makedirs(file_path)
-
-    np.save(file_path + "observations.npy", arr_obs)
-    np.save(file_path + "actions_behavior.npy", arr_bactions)
-    np.save(file_path + "actions_label.npy", arr_lactions)
-    np.save(file_path + "rewards.npy", arr_rewards)
-    with open(file_path + "task_hyper_para.txt", "w") as f:
-        for key, value in task.items():
-            f.write(f"{key}\t{value}\t")
-        f.write("\n")
+    write_unified_record(
+        file_path.rstrip("/\\"),
+        {
+            "observations": arr_obs,
+            "actions_behavior": arr_bactions,
+            "actions_label": arr_lactions,
+            "rewards": arr_rewards,
+            "task": task,
+        },
+        producer={"name": "metacontrol-cartpole", "version": "v1"},
+    )
 
 def dump_multi_records(
     rank_id,
@@ -176,7 +177,7 @@ def dump_multi_records(
 if __name__=="__main__":
     # Parse the arguments, should include the output file name
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_path", type=str, default="./cartpole_data/", help="output directory, the data would be stored as output_path/record-xxxx.npy")
+    parser.add_argument("--output_path", type=str, default="./cartpole_data/", help="output directory; each record is a committed RoboFM V1 dataset")
     parser.add_argument("--seq_length", type=int, default=200, help="max steps, default:200")
     parser.add_argument("--offpolicy_labeling", type=int, default=0, help="enable offpolicy labeling (DAgger), default:False")
     parser.add_argument("--task_number", type=int, default=8, help="task number, default:8")

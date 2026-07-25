@@ -10,7 +10,8 @@ from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 from stable_baselines3 import DQN, A2C, TD3, PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from projects.OmniRL.gym_env_wapper import DiscreteEnvWrapper, DarkroomEnv
+from data.anymdp.gym_env_wrapper import DiscreteEnvWrapper, DarkroomEnv
+from robofm.dataio import write_unified_record
 
 def create_directory(directory_path):
     if not os.path.exists(directory_path):
@@ -260,19 +261,19 @@ def generate_records(args, task_id):
         merged_result["rewards"] = merged_result["rewards"][:args.n_seq_len]
 
     file_path = f'{args.save_path}/data/record-{task_id:06d}'
-    create_directory(file_path)
-    np.save(f"{file_path}/observations.npy", merged_result["states"])  # Save state data
-    np.save(f"{file_path}/prompts.npy", merged_result["prompts"])  # Save prompt data
-    np.save(f"{file_path}/tags.npy", merged_result["tags"])  # Save tag data
-    np.save(f"{file_path}/actions_behavior.npy", merged_result["actions"])  # Save action data
-    np.save(f"{file_path}/rewards.npy", merged_result["rewards"])  # Save reward data
-    np.save(f"{file_path}/actions_label.npy", merged_result["actions"])  # Save fake label data.
-    average_trail_reward = np.average(merged_result["trail_reward"])
-    with open(f"{file_path}/trail_reward.txt", 'w') as file:
-        file.write(f"Average trail reward = {average_trail_reward}\n")
-        file.write("Trail rewards:\n")
-        for reward in merged_result["trail_reward"]:
-            file.write(f"{reward}\n")
+    write_unified_record(
+        file_path,
+        {
+            "observations": merged_result["states"],
+            "prompts": merged_result["prompts"],
+            "tags": merged_result["tags"],
+            "actions_behavior": merged_result["actions"],
+            "rewards": merged_result["rewards"],
+            "actions_label": merged_result["actions"],
+            "trail_rewards": merged_result["trail_reward"],
+        },
+        producer={"name": "anymdp-gym", "version": "v1"},
+    )
 
 
 

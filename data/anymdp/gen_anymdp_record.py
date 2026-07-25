@@ -13,7 +13,8 @@ import random as rnd
 from numpy import random
 import xenoverse
 from packaging import version
-from airsoul.utils import tag_vocabulary, tag_mapping_gamma, tag_mapping_id
+from data.anymdp.vocab import tag_vocabulary, tag_mapping_gamma, tag_mapping_id
+from robofm.dataio import write_unified_record
 
 from xenoverse.anymdp import AnyMDPTaskSampler
 from xenoverse.anymdp import AnyMDPSolverOpt
@@ -233,20 +234,24 @@ def dump_anymdp(work_id, world_work, path_name, epoch_ids, nstates, nactions, mi
             results, need_resample = run_epoch(idx, env, max_steps, offpolicy_labeling=is_offpolicy_labeling, task_from_file=tasks_from_file)
         
         file_path = f'{path_name}/record-{idx:06d}'
-        create_directory(file_path)
-
-        numpy.save("%s/observations.npy" % file_path, results["states"])
-        numpy.save("%s/prompts.npy" % file_path, results["prompts"])
-        numpy.save("%s/tags.npy" % file_path, results["tags"])
-        numpy.save("%s/actions_behavior.npy" % file_path, results["actions_behavior"])
-        numpy.save("%s/rewards.npy" % file_path, results["rewards"])
-        numpy.save("%s/actions_label.npy" % file_path, results["actions_label"])
+        write_unified_record(
+            file_path,
+            {
+                "observations": results["states"],
+                "prompts": results["prompts"],
+                "tags": results["tags"],
+                "actions_behavior": results["actions_behavior"],
+                "rewards": results["rewards"],
+                "actions_label": results["actions_label"],
+            },
+            producer={"name": "anymdp", "version": "v1"},
+        )
 
 
 if __name__=="__main__":
     # Parse the arguments, should include the output file name
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_path", type=str, default="./anymdp_data/", help="output directory, the data would be stored as output_path/record-xxxx.npy")
+    parser.add_argument("--output_path", type=str, default="./anymdp_data/", help="output directory; each record is a committed RoboFM V1 dataset")
     parser.add_argument("--task_source", type=str, choices=['FILE', 'NEW'], help="choose task source to generate the trajectory. FILE: tasks sample from existing file; NEW: create new tasks")
     parser.add_argument("--task_file", type=str, default=None, help="Task source file, used if task_source = FILE")
     parser.add_argument("--state_num", type=int, default=128, help="state num, default:128")
@@ -270,13 +275,12 @@ if __name__=="__main__":
         raise Exception("Must specify --task_file if task_source == FILE")
 
     # Data Generation
-    worker_splits = args.epochs / args.workers + 1.0e-6
     processes = []
-    n_b_t = args.start_index
     for worker_id in range(args.workers):
-        n_e_t = n_b_t + worker_splits
-        n_b = int(n_b_t)
-        n_e = int(n_e_t)
+        n_b = args.start_index + (args.epochs * worker_id) // args.workers
+        n_e = args.start_index + (args.epochs * (worker_id + 1)) // args.workers
+        if n_b >= n_e:
+            continue
 
         print("start processes generating %04d to %04d" % (n_b, n_e))
         process = multiprocessing.Process(target=dump_anymdp, 
@@ -286,7 +290,7 @@ if __name__=="__main__":
         processes.append(process)
         process.start()
 
-        n_b_t = n_e_t
-
     for process in processes:
-        process.join() 
+        process.join()
+        if process.exitcode:
+            raise RuntimeError(f"worker {process.pid} failed with exit code {process.exitcode}")

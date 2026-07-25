@@ -13,6 +13,7 @@ import pickle
 import xenoverse.mazeworld
 from xenoverse.mazeworld import MazeTaskSampler, Resampler
 from xenoverse.mazeworld.agents import OracleAgent
+from robofm.dataio import write_unified_record
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
 if current_folder not in sys.path:
@@ -106,22 +107,16 @@ def dump_maze(work_id, path_name, epoch_ids, n_range, max_steps, tasks_from_file
                 max_steps)
 
         file_path = f'{path_name}/record-{idx:06d}'
-
-        create_directory(file_path)
-        numpy.save("%s/observations.npy" % file_path, results["observations"])
-        numpy.save("%s/actions_behavior_id.npy" % file_path, results["actions_behavior_id"])
-        numpy.save("%s/actions_label_id.npy" % file_path, results["actions_label_id"])
-        numpy.save("%s/actions_behavior_val.npy" % file_path, results["actions_behavior_val"])
-        numpy.save("%s/actions_behavior_prior.npy" % file_path, results["actions_behavior_prior"])
-        numpy.save("%s/actions_label_val.npy" % file_path, results["actions_label_val"])
-        numpy.save("%s/commands.npy" % file_path, results["commands"])
-        numpy.save("%s/BEVs.npy" % file_path, results["BEVs"])
-        numpy.save("%s/rewards.npy" % file_path, results["rewards"])
+        write_unified_record(
+            file_path,
+            results,
+            producer={"name": "mazeworld", "version": "v1"},
+        )
 
 if __name__=="__main__":
     # Parse the arguments, should include the output file name
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_path", type=str, default="./maze_data/", help="output directory, the data would be stored as output_path/record-xxxx.npy")
+    parser.add_argument("--output_path", type=str, default="./maze_data/", help="output directory; each record is a committed RoboFM V1 dataset")
     parser.add_argument("--task_source", type=str, choices=['FILE', 'NEW'], help="choose task source to generate the trajectory. FILE: tasks sample from existing file; NEW: create new tasks")
     parser.add_argument("--task_file", type=str, default=None, help="Task source file, used if task_source = FILE")
     parser.add_argument("--max_steps", type=int, default=4000, help="max steps, default:4000")
@@ -148,13 +143,12 @@ if __name__=="__main__":
     label_configs = []
 
 
-    worker_splits = args.epochs / args.workers + 1.0e-6
     processes = []
-    n_b_t = args.start_index
     for worker_id in range(args.workers):
-        n_e_t = n_b_t + worker_splits
-        n_b = int(n_b_t)
-        n_e = int(n_e_t)
+        n_b = args.start_index + (args.epochs * worker_id) // args.workers
+        n_e = args.start_index + (args.epochs * (worker_id + 1)) // args.workers
+        if n_b >= n_e:
+            continue
 
         print("start processes generating %04d to %04d" % (n_b, n_e))
         process = multiprocessing.Process(target=dump_maze, 
@@ -163,7 +157,7 @@ if __name__=="__main__":
         processes.append(process)
         process.start()
 
-        n_b_t = n_e_t
-
     for process in processes:
-        process.join() 
+        process.join()
+        if process.exitcode:
+            raise RuntimeError(f"worker {process.pid} failed with exit code {process.exitcode}")

@@ -1,8 +1,9 @@
 # Unified Sequence Training
 
-This is the new task-agnostic training path. It consumes only language-token
-and image atoms from an immutable AIRSoul V1 dataset. Legacy MazeWorld and
-POTAR/PODAR entry points remain separate during migration.
+This is RoboFM's only training path. It consumes only language-token and image
+atoms from an immutable RoboFM V1 dataset or record collection. The stream may
+come from VLM messages, function calls, tool results, or trajectory producers;
+the trainer does not know the originating task type.
 
 Launch one GPU:
 
@@ -33,7 +34,7 @@ public GDN-2 layer.
 For records that cannot be materialized in memory, use the streaming writer:
 
 ```python
-from airsoul.dataio import UnifiedDatasetWriter
+from robofm.dataio import UnifiedDatasetWriter
 
 with UnifiedDatasetWriter(output, tokenizer=tokenizer, special_tokens=special) as writer:
     with writer.stream_record(expected_atoms=1_000_000_000) as record:

@@ -1,12 +1,12 @@
-# AIRSoul 统一序列与训练底座重构需求
+# RoboFM 统一序列与训练底座重构需求
 
-状态：实施中
+状态：统一架构已落地，旧训练与 `.npy` 数据路径已移除；任务 producer 已统一消息协议
 适用分支：`dev_test` 及后续重构分支
-最后更新：2026-07-21
+最后更新：2026-07-22
 
 ## 1. 背景
 
-当前 AIRSoul 将 observation、prompt、tag、behavior action、label action、reward 等定义为固定字段，并通过 Dataset tuple、`PODAR/POTAR` 字符串和项目专用 loss 约定组合顺序。这导致数据格式、任务语义、模型输入和训练代码相互耦合。
+重构前的系统将 observation、prompt、tag、behavior action、label action、reward 等定义为固定字段，并通过 Dataset tuple、`PODAR/POTAR` 字符串和项目专用 loss 约定组合顺序。这导致数据格式、任务语义、模型输入和训练代码相互耦合。
 
 新架构不再在底层定义 observation、action、reward、policy、world model 等领域对象。所有数据统一表示为由两类 atom 构成的序列：
 
@@ -14,6 +14,12 @@
 2. `IMAGE`。
 
 领域语义由 language special token 表达。例如 `<observation>`、`</observation>`、`<action>`、`</action>` 都只是词表中的 token。数据 I/O、Dataset、主干模型和训练循环不解释这些标签的业务含义。
+
+producer-facing protocol follows standard multimodal/function-calling messages:
+`system`, `user`, `assistant`, and `tool` roles; `text` and `image` content
+parts; and OpenAI-compatible `tool_calls` with function name and arguments.
+The protocol is encoded into the same language/image atom stream, so the
+unified trainer does not contain task-specific branches.
 
 ## 2. 本阶段目标
 
@@ -445,7 +451,7 @@ BackboneOutput = backbone.forward_chunk(
 
 - 基于 FLA `KimiDeltaAttention`；
 - 训练使用 chunk kernel，递归推理使用 fused recurrent；
-- 使用 AirSoul-managed state；
+- 使用 RoboFM-managed state；
 - 支持 BF16、conv/recurrent state、per-lane mask/reset；
 - 默认使用 Triton，不因可选 TileLang 损坏而阻塞。
 
@@ -600,14 +606,14 @@ checkpoint 必须包含：
 
 ## 16. 兼容与迁移
 
-- MazeWorld 作为首个端到端样板；
-- legacy converter 将原有字段序列化为 special-token-wrapped unified stream；
-- converter 决定旧 observation/action/reward 如何编码，但 Data I/O 不保留这些字段；
-- 新 reader/trainer 只读取 V1；
-- 旧 DDP/EpochManager 路径短期保留并标记 deprecated；
-- 不保留 `LegacyPOTARAdapter` 作为新模型运行时依赖；
-- 旧 PODAR/POTAR 仅可在离线 converter 中用于解释历史配置；
-- 数据生成器后续直接写 unified atom stream。
+- 所有 trajectory producer 直接写 special-token-wrapped V1 atom stream；
+- producer 决定 observation/action/reward 如何编码，Data I/O 不保留固定领域字段；
+- reader/trainer 只读取 V1，且支持单 dataset 与多进程 record collection；
+- 旧 `.npy` Dataset、DDP/EpochManager、PrefetchDataLoader 和项目专用训练入口已移除；
+- 不保留 `LegacyPOTARAdapter` 或旧 PODAR/POTAR 运行时兼容层；
+- task/coach 文件仍可作为采样器输入，但训练轨迹只能输出为 V1。
+- `data/` 只保留 producer 逻辑；MazeWorld、AnyMDP、Gym、MetaControl 和 MetaLang 不得提供独立 RoboFM 训练入口；
+- `projects/UnifiedSequence` 是唯一的训练、验证、checkpoint 和 resume 入口。
 
 ## 17. 测试与验收
 
@@ -700,7 +706,7 @@ checkpoint 必须包含：
 
 - 删除新路径中的位置 tuple、`model.module` 和项目内 segment 循环；
 - 停用 PODAR/POTAR；
-- 标记旧 DDP/EpochManager/PrefetchDataLoader deprecated；
+- 删除旧 DDP/EpochManager/PrefetchDataLoader；
 - 固化后续数据合成器直接写 unified stream 的 API。
 
 ## 19. 风险与待确认项

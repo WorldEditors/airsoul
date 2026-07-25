@@ -4,18 +4,119 @@ import unittest
 
 import numpy as np
 
-from airsoul.dataio import (
+from robofm.dataio import (
     AtomType,
     LaneScheduler,
     TargetEntry,
     UnifiedDatasetWriter,
     UnifiedMMapDataset,
     collate_chunks,
+    open_unified_dataset,
+    write_unified_messages,
 )
-from airsoul.dataio.validate import validate_dataset
+from robofm.dataio.validate import validate_dataset
+from robofm.dataio import write_unified_record
+from robofm.dataio.producer import (
+    BYTE_TOKEN_BASE,
+    DEFAULT_SPECIAL_TOKENS,
+    TOKENIZER_VOCAB_SIZE,
+)
 
 
 class UnifiedDataIOTest(unittest.TestCase):
+    def test_standard_vlm_and_function_messages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "messages"
+            write_unified_messages(
+                output,
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "inspect this frame"},
+                            {"type": "image", "image": np.zeros((2, 2, 3), dtype=np.uint8)},
+                        ],
+                    },
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "set_action",
+                                "arguments": {"action": 2},
+                            },
+                        }],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call-1",
+                        "tool_result": {"ok": True},
+                    },
+                ],
+                producer={"name": "test", "protocol": "messages-v1"},
+            )
+            with UnifiedMMapDataset(output) as dataset:
+                self.assertEqual(dataset.manifest["producer"]["protocol"], "messages-v1")
+                record = dataset[0]
+                self.assertEqual(
+                    int(np.count_nonzero(record.atom_types == int(AtomType.IMAGE))),
+                    1,
+                )
+                self.assertIn(DEFAULT_SPECIAL_TOKENS["<|tool_call|>"], record.atom_values)
+
+    def test_benchmark_producer_writes_committed_v1_record(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "record-000000"
+            write_unified_record(
+                output,
+                {
+                    "observations": np.arange(8, dtype=np.float32).reshape(2, 4),
+                    "actions": np.array([1, 2], dtype=np.int32),
+                    "images": np.arange(18, dtype=np.uint8).reshape(2, 3, 3, 1),
+                },
+                producer={"name": "test"},
+            )
+            self.assertTrue((output / "COMMITTED").is_file())
+            dataset = UnifiedMMapDataset(output)
+            self.assertEqual(len(dataset), 1)
+            self.assertEqual(dataset.manifest["producer"]["name"], "test")
+            self.assertEqual(dataset.manifest["totals"]["images"], 2)
+            record = dataset[0]
+            language_values = record.atom_values[
+                record.atom_types == int(AtomType.LANGUAGE_TOKEN)
+            ]
+            self.assertEqual(int(language_values[0]), DEFAULT_SPECIAL_TOKENS["<bos>"])
+            self.assertEqual(int(language_values[-1]), DEFAULT_SPECIAL_TOKENS["<eos>"])
+            self.assertEqual(
+                int(np.count_nonzero(language_values == DEFAULT_SPECIAL_TOKENS["<field>"])),
+                6,
+            )
+            self.assertLess(int(language_values.max()), TOKENIZER_VOCAB_SIZE)
+            dataset.close()
+
+    def test_record_collection_uses_global_record_and_image_indexes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(2):
+                write_unified_record(
+                    root / f"record-{index:06d}",
+                    {"images": np.full((1, 2, 2, 1), index, dtype=np.uint8)},
+                    producer={"name": "test"},
+                )
+            dataset = open_unified_dataset(root)
+            self.assertEqual(len(dataset), 2)
+            first = dataset.read_chunk(0, 0, dataset.record_length(0))
+            second = dataset.read_chunk(1, 0, dataset.record_length(1))
+            self.assertEqual(first.record_index, 0)
+            self.assertEqual(second.record_index, 1)
+            batch = collate_chunks(
+                [first, second], pad_token_id=0, dataset=dataset, load_images=True
+            )
+            self.assertEqual(int(next(iter(batch.image_payloads[0].values())).max()), 0)
+            self.assertEqual(int(next(iter(batch.image_payloads[1].values())).max()), 1)
+            dataset.close()
+
     def _write_dataset(self, root: Path) -> Path:
         output = root / "dataset"
         with UnifiedDatasetWriter(

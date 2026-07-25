@@ -14,25 +14,28 @@
 
 import io
 
-from airsoul import __version__
+from robofm import __version__
 from setuptools import setup, find_packages
 
 with io.open('README.md', 'r', encoding='utf-8') as fh:
     long_description = fh.read()
 
 setup(
-    name='airsoul',  
+    name='robofm',
     version=__version__,  
-    packages=find_packages(),  
+    packages=find_packages(include=['robofm', 'robofm.*']),
     package_dir={'': '.'},  
     install_requires=[
         'numpy>=1.18.0',
-        'gymnasium>=1.0.0',
         'torch>=2.4.0',
-        'restools>=0.0.1.1',
     ],
     extras_require={
         'fla': ['flash-linear-attention>=0.1.0'],
         'logging': ['tensorboard>=2.14.0'],
+        'data': [
+            'gymnasium>=1.0.0',
+            'stable-baselines3>=2.0.0',
+            'sb3-contrib>=2.0.0',
+        ],
     },
 )

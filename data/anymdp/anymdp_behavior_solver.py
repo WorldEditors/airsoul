@@ -11,7 +11,7 @@ import multiprocessing
 import pickle
 import random as rnd
 from numpy import random
-from airsoul.utils import tag_vocabulary, tag_mapping_gamma, tag_mapping_id
+from data.anymdp.vocab import tag_vocabulary, tag_mapping_gamma, tag_mapping_id
 from xenoverse.anymdp import AnyMDPSolverOpt, AnyMDPSolverMBRL, AnyMDPSolverQ
 from xenoverse.utils import pseudo_random_seed
 
